@@ -26,17 +26,18 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   // NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
   // Number of particles
-  num_particles = 200;
+  num_particles = 100;
+  const char* env_var = getenv("NUM_PARTICLES");
+  if (env_var != NULL) {
+    num_particles = atoi(env_var);
+  }
+  cout << "Initalizing particle filter with " << num_particles << " particles\n";
 
   default_random_engine gen;
   // Create normal distribution to generate x, y and theta values for Particles with Gaussian noise.
   normal_distribution<double> dist_x(x, std[0]);
   normal_distribution<double> dist_y(y, std[1]);
   normal_distribution<double> dist_theta(theta, std[2]);
-
-  cout << "ParticleFilter::init num_particles:" << num_particles << endl;
-  cout << " x:" << x << " y:" << y << " theta:" << theta;
-  cout << " std_dev: " << std[0] << " " << std[1] << " " << std[2] << endl;
 
   // Initialize all particles
   for (auto i = 0; i < num_particles; i++) {
@@ -63,26 +64,31 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
   // TODO: Add measurements to each particle and add random Gaussian noise.
 
   default_random_engine gen;
-  // Create normal distributions for velocity and yaw rate.
-  normal_distribution<double> dist_vel(velocity, std_pos[0]);
-  normal_distribution<double> dist_yawd(yaw_rate, std_pos[1]);
+  // Create normal distribution to generate dx, dy and dtheta values for Particles with Gaussian noise.
+  normal_distribution<double> dist_dx(0, std_pos[0]);
+  normal_distribution<double> dist_dy(0, std_pos[1]);
+  normal_distribution<double> dist_dtheta(0, std_pos[2]);
 
-  cout << "DEBUG: ParticleFilter::prediction: delta_t:" << delta_t << " velocity:" << velocity;
-  cout << " std_pos:" << std_pos[0] << std_pos[1] << " yaw_rate:" << yaw_rate << endl;
+  bool constant_yaw = fabs(yaw_rate) < 0.001;
+  const double v_over_yawd = velocity / yaw_rate;
+  const double dt_yaw_rate = yaw_rate * delta_t;
+  const double dt_velocity = velocity * delta_t;
 
   for (auto& p : particles) {
-    const auto v = dist_vel(gen);
-    const auto yawd = dist_yawd(gen);
-    if (fabs(yawd) > 0.001) {
-      const double v_over_yawd = v / yawd;
-      p.x += v_over_yawd * (sin(p.theta + yawd * delta_t) - sin(p.theta));
-      p.y += v_over_yawd * (cos(p.theta) - cos(p.theta + yawd * delta_t));
-      p.theta += (yawd * delta_t); // TODO: Check if this needs to be normalized.
+    if (constant_yaw) {
+      // Assume the car is moving on a straight line.
+      p.x += dt_velocity * cos(p.theta);
+      p.y += dt_velocity * sin(p.theta);
     } else {
-      // Almost 0 yaw rate. Assume the car is moving on a straight line.
-      p.x += v * delta_t * cos(p.theta);
-      p.y += v * delta_t * sin(p.theta);
+      p.x += v_over_yawd * (sin(p.theta + dt_yaw_rate) - sin(p.theta));
+      p.y += v_over_yawd * (cos(p.theta) - cos(p.theta + dt_yaw_rate));
+      p.theta += dt_yaw_rate;
     }
+
+    // Add noise
+    p.x += dist_dx(gen);
+    p.y += dist_dy(gen);
+    p.theta += dist_dtheta(gen);
   }
 
   return;
@@ -130,13 +136,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
   //   3.33
   //   http://planning.cs.uiuc.edu/node99.html
 
-  cout << "UpdateWeights: sensor_range:" << sensor_range;
-  cout << " std_landmark" << std_landmark[0] << std_landmark[1];
-  cout << " observations: " << observations.size();
-  cout << " Landmarks: " << map_landmarks.landmark_list.size() << endl;
-
-  int max_predictions = 0;
-
   // Clear weights
   weights.clear();
 
@@ -175,9 +174,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
       }
     }
 
-    if (predictions.size() > max_predictions)
-      max_predictions = predictions.size();
-
     // Associate transformed observations with the predicted landmarks
     dataAssociation(predictions, tx_observations);
 
@@ -211,8 +207,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     weights.push_back(p.weight);
   }
 
-  cout << "DEBUG: Update: max predictions:" << max_predictions << endl;
-
   return;
 }
 
@@ -221,49 +215,16 @@ void ParticleFilter::resample() {
   // NOTE: You may find std::discrete_distribution helpful here.
   //   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
 
-  if (weights.size() != particles.size()) {
-    cout << "ERROR: ParticleFilter::resample(): weights.size() != particles.size()\n";
-    return;
-  }
-
   // copy current particles in to a temp vector
-  vector<Particle> old_particles = particles;
+  vector<Particle> new_particles;
 
-  // clear particles
-  particles.clear();
-
-  // Create an uniform integer distribution for indices.
-  const auto num_weights = weights.size();
-  const int last_idx = num_weights - 1;
-  uniform_int_distribution<int> dist_index(0, last_idx);
-
-  // Create an uniform real distribution for weights.
-  const auto w_max = *max_element(weights.begin(), weights.end());
-  uniform_real_distribution<double> dist_beta(0, 2 * w_max);
-
+  discrete_distribution<int> dist_index(weights.begin(), weights.end());
   default_random_engine gen;
-
-  cout << "DEBUG: ParticleFilter::resample(): w_max: " << w_max << " num_weights:"<< num_weights << endl;
-
-  // Start with a random index
-  auto idx = dist_index(gen);
-  double beta = 0;
-
-  for (auto i = 0u; i < num_weights; i++) {
-    beta += dist_beta(gen);
-    while (beta > weights[idx]) {
-      beta -= weights[idx];
-      // increment with a wrap around.
-      idx = (idx == last_idx) ? 0 : idx+1;
-    }
-
+  for (auto i = 0u; i < weights.size(); i++) {
     // Add the new weight to list.
-    particles.push_back(old_particles[idx]);
+    new_particles.push_back(particles[dist_index(gen)]);
   }
-
-  if (particles.empty()) {
-    cout << "ParticleFilter::resample No particles left after resample\n";
-  }
+  particles = new_particles;
 
   return;
 }
