@@ -1,8 +1,15 @@
-# Overview
-This repository contains all the code needed to complete the final project for the Localization course in Udacity's Self-Driving Car Nanodegree.
+This repository contains my assignment submission for Project 3 of Term 2 in Udacity's Self-Driving Car Nanodegree.
 
-#### Submission
-All you will submit is your completed version of `particle_filter.cpp`, which is located in the `src` directory. You should probably do a `git pull` before submitting to verify that your project passes the most up-to-date version of the grading code (there are some parameters in `src/main.cpp` which govern the requirements on accuracy and run time.)
+## Rubrik points
+### Does your particle filter localize the vehicle to within the desired accuracy?
+After running ./run.sh and launching the simulator, the car starts moving and the blue pointer follows it.
+The simulator displays "Success! Your particle filter passed!" after few minutes. 
+
+### Does your particle run within the specified time of 100 seconds?
+Yes, The simulator displays "Success! Your particle filter passed!" after certain time.
+
+### Does your code use a particle filter to localize the robot?
+Yes, most of the code is written based on the lecture notes and assignment and hints in the reference code.
 
 ## Project Introduction
 Your robot has been kidnapped and transported to a new location! Luckily it has a map of this location, a (noisy) GPS estimate of its initial location, and lots of (noisy) sensor and control data.
